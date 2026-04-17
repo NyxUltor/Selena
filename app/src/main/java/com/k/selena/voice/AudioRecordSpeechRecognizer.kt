@@ -42,8 +42,10 @@ class AudioRecordSpeechRecognizer : SpeechRecognizer {
             return null
         }
 
+        var recordingStarted = false
         return try {
             recorder.startRecording()
+            recordingStarted = true
             Log.i(TAG, "Microphone open – capturing ${windowMs}ms of PCM audio")
 
             val readBuffer = ByteArray(bufferSize)
@@ -65,7 +67,10 @@ class AudioRecordSpeechRecognizer : SpeechRecognizer {
             Log.e(TAG, "Audio capture error", e)
             null
         } finally {
-            recorder.stop()
+            if (recordingStarted) {
+                runCatching { recorder.stop() }
+                    .onFailure { Log.w(TAG, "AudioRecord stop failed during cleanup", it) }
+            }
             recorder.release()
             Log.i(TAG, "Microphone released")
         }
