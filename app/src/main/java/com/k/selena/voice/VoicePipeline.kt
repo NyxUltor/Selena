@@ -18,14 +18,16 @@ class VoicePipeline(
 ) {
     private val running = AtomicBoolean(false)
     private val executor = Executors.newSingleThreadExecutor()
+    private val toneGenerator = ToneGenerator(AudioManager.STREAM_NOTIFICATION, 80)
     private var worker: Future<*>? = null
 
     fun start() {
         if (!running.compareAndSet(false, true)) {
+            Log.d(TAG, "Voice loop already running")
             return
         }
         worker = executor.submit {
-            Log.i(TAG, "Voice loop started")
+            Log.i(TAG, "Voice loop started (offline-first mock mode)")
             while (running.get()) {
                 try {
                     Thread.sleep(POLL_INTERVAL_MS)
@@ -36,7 +38,12 @@ class VoicePipeline(
                 if (!hotwordDetector.pollForHotword()) {
                     continue
                 }
-                onHotwordDetected()
+                runCatching {
+                    onHotwordDetected()
+                }.onFailure { throwable ->
+                    Log.e(TAG, "Voice cycle failed; returning to IDLE", throwable)
+                    stateMachine.transitionTo(SelenaState.IDLE, "Voice cycle failure recovery")
+                }
             }
         }
     }
@@ -45,6 +52,7 @@ class VoicePipeline(
         running.set(false)
         worker?.cancel(true)
         executor.shutdownNow()
+        toneGenerator.release()
         stateMachine.transitionTo(SelenaState.IDLE, "Voice pipeline stopped")
         Log.i(TAG, "Voice loop stopped")
     }
@@ -52,10 +60,11 @@ class VoicePipeline(
     private fun onHotwordDetected() {
         playBeep(start = true)
         stateMachine.transitionTo(SelenaState.LISTENING, "Hotword detected")
-        Log.i(TAG, "Opening listening window")
+        Log.i(TAG, "Opening listening window for ${LISTEN_WINDOW_MS}ms")
         val recognized = speechRecognizer.recognizeForWindow(LISTEN_WINDOW_MS)
         stateMachine.transitionTo(SelenaState.EXECUTING, "Recognition complete")
         if (!recognized.isNullOrBlank()) {
+            Log.i(TAG, "Recognized text=$recognized")
             commandRouter.route(recognized)
         } else {
             Log.i(TAG, "Silence detected; closing listening window")
@@ -66,17 +75,7 @@ class VoicePipeline(
 
     private fun playBeep(start: Boolean) {
         val tone = if (start) ToneGenerator.TONE_PROP_BEEP else ToneGenerator.TONE_PROP_ACK
-        val tg = ToneGenerator(AudioManager.STREAM_NOTIFICATION, 80)
-        try {
-            tg.startTone(tone, BEEP_DURATION_MS.toInt())
-            // Wait for the tone to finish before calling release(). startTone() is asynchronous
-            // and calling release() too early will cut the tone short.
-            Thread.sleep(BEEP_DURATION_MS)
-        } catch (_: InterruptedException) {
-            Thread.currentThread().interrupt()
-        } finally {
-            tg.release()
-        }
+        toneGenerator.startTone(tone, BEEP_DURATION_MS.toInt())
     }
 
     companion object {

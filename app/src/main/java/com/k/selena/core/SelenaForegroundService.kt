@@ -1,16 +1,20 @@
 package com.k.selena.core
 
+import android.Manifest
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
 import android.util.Log
+import androidx.core.content.ContextCompat
 import androidx.core.app.NotificationCompat
+import com.k.selena.BuildConfig
 import com.k.selena.R
 import com.k.selena.command.CommandRouter
 import com.k.selena.system.AndroidSystemActions
@@ -29,7 +33,7 @@ class SelenaForegroundService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        stateMachine = SelenaStateMachine()
+        stateMachine = SelenaStateMachine(this)
         val systemActions = AndroidSystemActions(this)
         val rootExecutor = MagiskRootExecutor()
         val commandRouter = CommandRouter(
@@ -38,7 +42,7 @@ class SelenaForegroundService : Service() {
             rootExecutor = rootExecutor
         )
         pipeline = VoicePipeline(
-            hotwordDetector = MockHotwordDetector("Selena"),
+            hotwordDetector = MockHotwordDetector(BuildConfig.HOTWORD),
             speechRecognizer = AudioRecordSpeechRecognizer(),
             stateMachine = stateMachine,
             commandRouter = commandRouter
@@ -51,7 +55,7 @@ class SelenaForegroundService : Service() {
             PowerManager.PARTIAL_WAKE_LOCK,
             "Selena::VoicePipelineWakeLock"
         )
-        Log.i(TAG, "Foreground service created")
+        Log.i(TAG, "Foreground service created with restored state=${stateMachine.currentState}")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -60,8 +64,16 @@ class SelenaForegroundService : Service() {
             wakeLock.acquire()
         }
         if (started.compareAndSet(false, true)) {
-            Log.i(TAG, "Starting voice pipeline")
-            pipeline.start()
+            if (stateMachine.currentState != SelenaState.IDLE) {
+                stateMachine.transitionTo(SelenaState.IDLE, "Service restart recovery")
+            }
+            if (hasRecordAudioPermission()) {
+                Log.i(TAG, "Starting voice pipeline")
+                pipeline.start()
+            } else {
+                Log.w(TAG, "RECORD_AUDIO not granted; service remains active in IDLE mode")
+                stateMachine.transitionTo(SelenaState.IDLE, "Microphone permission unavailable")
+            }
         } else {
             Log.d(TAG, "Voice pipeline already running")
         }
@@ -80,6 +92,12 @@ class SelenaForegroundService : Service() {
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
+
+    private fun hasRecordAudioPermission(): Boolean =
+        ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.RECORD_AUDIO
+        ) == PackageManager.PERMISSION_GRANTED
 
     private fun createNotification(): Notification {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
