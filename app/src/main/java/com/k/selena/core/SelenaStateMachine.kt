@@ -19,7 +19,7 @@ class SelenaStateMachine(context: Context) {
     }
 
     fun transitionTo(newState: SelenaState, reason: String) {
-        while (true) {
+        repeat(MAX_TRANSITION_RETRIES) { attempt ->
             val oldState = currentStateRef.get()
             if (oldState == newState) {
                 Log.d(TAG, "State unchanged: $oldState (reason=$reason)")
@@ -30,8 +30,13 @@ class SelenaStateMachine(context: Context) {
                 Log.i(TAG, "State transition: $oldState -> $newState (reason=$reason)")
                 return
             }
-            LockSupport.parkNanos(1_000_000L)
+            if (attempt < YIELD_RETRIES) {
+                Thread.yield()
+            } else {
+                LockSupport.parkNanos(RETRY_BACKOFF_NS)
+            }
         }
+        Log.e(TAG, "State transition failed after retries: target=$newState (reason=$reason)")
     }
 
     private fun restoreState(): SelenaState {
@@ -55,5 +60,8 @@ class SelenaStateMachine(context: Context) {
         private const val TAG = "SelenaStateMachine"
         private const val PREFS_NAME = "selena_state"
         private const val KEY_STATE = "current_state"
+        private const val MAX_TRANSITION_RETRIES = 100
+        private const val YIELD_RETRIES = 8
+        private const val RETRY_BACKOFF_NS = 100_000L
     }
 }

@@ -18,6 +18,7 @@ class VoicePipeline(
 ) {
     private val running = AtomicBoolean(false)
     private val executor = Executors.newSingleThreadExecutor()
+    private val toneGeneratorLock = Any()
     private var toneGenerator: ToneGenerator? = null
     private var worker: Future<*>? = null
 
@@ -79,7 +80,7 @@ class VoicePipeline(
     }
 
     private fun getOrCreateToneGenerator(): ToneGenerator {
-        return synchronized(this) {
+        return synchronized(toneGeneratorLock) {
             toneGenerator ?: ToneGenerator(AudioManager.STREAM_NOTIFICATION, 80).also {
                 toneGenerator = it
             }
@@ -87,7 +88,7 @@ class VoicePipeline(
     }
 
     private fun releaseToneGenerator() {
-        synchronized(this) {
+        synchronized(toneGeneratorLock) {
             toneGenerator?.release()
             toneGenerator = null
         }
