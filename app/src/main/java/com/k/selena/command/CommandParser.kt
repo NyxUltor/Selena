@@ -11,16 +11,16 @@ class CommandParser {
             return SelenaCommand.OpenTermux(command)
         }
         if (lower.startsWith("open ")) {
-            return SelenaCommand.OpenApp(raw.substring(OPEN_PREFIX.length).trim())
+            return SelenaCommand.OpenApp(stripPrefix(raw, OPEN_PREFIX).trim())
         }
 
         val elevated = lower.startsWith("sudo ")
         val shellPayload = when {
-            lower.startsWith(SUDO_RUN_PREFIX) -> raw.substring(SUDO_RUN_PREFIX.length).trim()
-            lower.startsWith(SUDO_EXECUTE_PREFIX) -> raw.substring(SUDO_EXECUTE_PREFIX.length).trim()
-            lower.startsWith(RUN_PREFIX) -> raw.substring(RUN_PREFIX.length).trim()
-            lower.startsWith(EXECUTE_PREFIX) -> raw.substring(EXECUTE_PREFIX.length).trim()
-            elevated -> raw.substring(SUDO_PREFIX.length).trim()
+            lower.startsWith(SUDO_RUN_PREFIX) -> stripPrefix(raw, SUDO_RUN_PREFIX).trim()
+            lower.startsWith(SUDO_EXECUTE_PREFIX) -> stripPrefix(raw, SUDO_EXECUTE_PREFIX).trim()
+            lower.startsWith(RUN_PREFIX) -> stripPrefix(raw, RUN_PREFIX).trim()
+            lower.startsWith(EXECUTE_PREFIX) -> stripPrefix(raw, EXECUTE_PREFIX).trim()
+            elevated -> stripPrefix(raw, SUDO_PREFIX).trim()
             else -> raw
         }
         return if (shellPayload.isBlank()) SelenaCommand.Unknown
@@ -31,14 +31,19 @@ class CommandParser {
         val afterPrefixIndex = OPEN_TERMUX_PREFIX.length
         val runIndex = lower.indexOf(RUN_PREFIX, startIndex = afterPrefixIndex)
         if (runIndex >= 0) {
-            return raw.substring(runIndex + RUN_PREFIX.length).trim().ifBlank { null }
+            val contentStart = (runIndex + RUN_PREFIX.length).coerceAtMost(raw.length)
+            return raw.substring(contentStart).trim().ifBlank { null }
         }
         val executeIndex = lower.indexOf(EXECUTE_PREFIX, startIndex = afterPrefixIndex)
         if (executeIndex >= 0) {
-            return raw.substring(executeIndex + EXECUTE_PREFIX.length).trim().ifBlank { null }
+            val contentStart = (executeIndex + EXECUTE_PREFIX.length).coerceAtMost(raw.length)
+            return raw.substring(contentStart).trim().ifBlank { null }
         }
         return null
     }
+
+    private fun stripPrefix(raw: String, prefix: String): String =
+        if (raw.length >= prefix.length) raw.substring(prefix.length) else ""
 
     companion object {
         private const val OPEN_TERMUX_PREFIX = "open termux"
