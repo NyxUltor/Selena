@@ -26,6 +26,24 @@ class CommandParserTest {
     }
 
     @Test
+    fun `parses open app command with mixed casing`() {
+        val parsed = parser.parse("Open Settings")
+        assertEquals(SelenaCommand.OpenApp("Settings"), parsed)
+    }
+
+    @Test
+    fun `parses termux command with mixed casing`() {
+        val parsed = parser.parse("Open Termux and RUN ls -la")
+        assertEquals(SelenaCommand.OpenTermux("ls -la"), parsed)
+    }
+
+    @Test
+    fun `parses execute command with mixed casing`() {
+        val parsed = parser.parse("SuDo ExEcUtE id")
+        assertEquals(SelenaCommand.RunShell("id", elevated = true), parsed)
+    }
+
+    @Test
     fun `returns unknown for blank text`() {
         val parsed = parser.parse(" ")
         assertTrue(parsed is SelenaCommand.Unknown)
