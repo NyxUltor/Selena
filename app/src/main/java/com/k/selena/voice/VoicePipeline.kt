@@ -75,12 +75,13 @@ class VoicePipeline(
 
     private fun playBeep(start: Boolean) {
         val tone = if (start) ToneGenerator.TONE_PROP_BEEP else ToneGenerator.TONE_PROP_ACK
-        toneGenerator.startTone(tone, 120)
+        toneGenerator.startTone(tone, BEEP_DURATION_MS.toInt())
     }
 
     companion object {
         private const val TAG = "VoicePipeline"
         private const val POLL_INTERVAL_MS = 750L
         private const val LISTEN_WINDOW_MS = 2500L
+        private const val BEEP_DURATION_MS = 150L
     }
 }
