@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.k.selena.R
@@ -15,8 +16,8 @@ import com.k.selena.command.CommandRouter
 import com.k.selena.system.AndroidSystemActions
 import com.k.selena.system.MagiskRootExecutor
 import com.k.selena.system.RuntimeShellExecutor
+import com.k.selena.voice.AudioRecordSpeechRecognizer
 import com.k.selena.voice.MockHotwordDetector
-import com.k.selena.voice.MockSpeechRecognizer
 import com.k.selena.voice.VoicePipeline
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -24,6 +25,7 @@ class SelenaForegroundService : Service() {
     private val started = AtomicBoolean(false)
     private lateinit var stateMachine: SelenaStateMachine
     private lateinit var pipeline: VoicePipeline
+    private lateinit var wakeLock: PowerManager.WakeLock
 
     override fun onCreate() {
         super.onCreate()
@@ -36,17 +38,24 @@ class SelenaForegroundService : Service() {
             rootExecutor = rootExecutor
         )
         pipeline = VoicePipeline(
-            context = this,
             hotwordDetector = MockHotwordDetector("Selena"),
-            speechRecognizer = MockSpeechRecognizer(),
+            speechRecognizer = AudioRecordSpeechRecognizer(),
             stateMachine = stateMachine,
             commandRouter = commandRouter
+        )
+        val powerManager = getSystemService(PowerManager::class.java)
+        wakeLock = powerManager.newWakeLock(
+            PowerManager.PARTIAL_WAKE_LOCK,
+            "Selena::VoicePipelineWakeLock"
         )
         Log.i(TAG, "Foreground service created")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         startForeground(NOTIFICATION_ID, createNotification())
+        if (!wakeLock.isHeld) {
+            wakeLock.acquire()
+        }
         if (started.compareAndSet(false, true)) {
             Log.i(TAG, "Starting voice pipeline")
             pipeline.start()
@@ -54,12 +63,16 @@ class SelenaForegroundService : Service() {
             Log.d(TAG, "Voice pipeline already running")
         }
         // TODO: Ask user to disable battery optimizations for higher survivability on OEM ROMs.
+        //       Intent("android.settings.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS") with package URI.
         return START_STICKY
     }
 
     override fun onDestroy() {
         Log.i(TAG, "Foreground service destroyed")
         pipeline.stop()
+        if (wakeLock.isHeld) {
+            wakeLock.release()
+        }
         super.onDestroy()
     }
 

@@ -1,6 +1,5 @@
 package com.k.selena.voice
 
-import android.content.Context
 import android.media.AudioManager
 import android.media.ToneGenerator
 import android.util.Log
@@ -12,7 +11,6 @@ import java.util.concurrent.Future
 import java.util.concurrent.atomic.AtomicBoolean
 
 class VoicePipeline(
-    context: Context,
     private val hotwordDetector: HotwordDetector,
     private val speechRecognizer: SpeechRecognizer,
     private val stateMachine: SelenaStateMachine,
@@ -68,12 +66,21 @@ class VoicePipeline(
 
     private fun playBeep(start: Boolean) {
         val tone = if (start) ToneGenerator.TONE_PROP_BEEP else ToneGenerator.TONE_PROP_ACK
-        ToneGenerator(AudioManager.STREAM_NOTIFICATION, 80).startTone(tone, 120)
+        val tg = ToneGenerator(AudioManager.STREAM_NOTIFICATION, 80)
+        try {
+            tg.startTone(tone, BEEP_DURATION_MS.toInt())
+            Thread.sleep(BEEP_DURATION_MS)
+        } catch (_: InterruptedException) {
+            Thread.currentThread().interrupt()
+        } finally {
+            tg.release()
+        }
     }
 
     companion object {
         private const val TAG = "VoicePipeline"
         private const val POLL_INTERVAL_MS = 750L
         private const val LISTEN_WINDOW_MS = 2500L
+        private const val BEEP_DURATION_MS = 150L
     }
 }
