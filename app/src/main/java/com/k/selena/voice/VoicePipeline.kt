@@ -69,6 +69,8 @@ class VoicePipeline(
         val tg = ToneGenerator(AudioManager.STREAM_NOTIFICATION, 80)
         try {
             tg.startTone(tone, BEEP_DURATION_MS.toInt())
+            // Wait for the tone to finish before calling release(). startTone() is asynchronous
+            // and calling release() too early will cut the tone short.
             Thread.sleep(BEEP_DURATION_MS)
         } catch (_: InterruptedException) {
             Thread.currentThread().interrupt()

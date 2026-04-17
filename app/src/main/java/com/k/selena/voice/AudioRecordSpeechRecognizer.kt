@@ -37,7 +37,7 @@ class AudioRecordSpeechRecognizer : SpeechRecognizer {
         )
 
         if (recorder.state != AudioRecord.STATE_INITIALIZED) {
-            Log.e(TAG, "AudioRecord failed to initialise; check RECORD_AUDIO permission")
+            Log.e(TAG, "AudioRecord failed to initialize; check RECORD_AUDIO permission")
             recorder.release()
             return null
         }

@@ -44,6 +44,9 @@ class SelenaForegroundService : Service() {
             commandRouter = commandRouter
         )
         val powerManager = getSystemService(PowerManager::class.java)
+        // PARTIAL_WAKE_LOCK keeps the CPU alive while the screen is off so the voice pipeline
+        // can keep running. It is held for the full lifetime of the foreground service and
+        // released unconditionally in onDestroy(), making a timeout unnecessary here.
         wakeLock = powerManager.newWakeLock(
             PowerManager.PARTIAL_WAKE_LOCK,
             "Selena::VoicePipelineWakeLock"
