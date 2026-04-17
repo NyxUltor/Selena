@@ -1,0 +1,4 @@
+<resources>
+    <style name="Theme.Selena" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+    </style>
+</resources>
