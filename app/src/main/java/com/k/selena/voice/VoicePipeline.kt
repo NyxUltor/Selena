@@ -18,7 +18,6 @@ class VoicePipeline(
 ) {
     private val running = AtomicBoolean(false)
     private val executor = Executors.newSingleThreadExecutor()
-    @Volatile
     private var toneGenerator: ToneGenerator? = null
     private var worker: Future<*>? = null
 

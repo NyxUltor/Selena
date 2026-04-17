@@ -3,6 +3,7 @@ package com.k.selena.core
 import android.content.Context
 import android.util.Log
 import java.util.concurrent.atomic.AtomicReference
+import java.util.concurrent.locks.LockSupport
 
 class SelenaStateMachine(context: Context) {
     private val appContext = context.applicationContext
@@ -29,7 +30,7 @@ class SelenaStateMachine(context: Context) {
                 Log.i(TAG, "State transition: $oldState -> $newState (reason=$reason)")
                 return
             }
-            Thread.yield()
+            LockSupport.parkNanos(1_000_000L)
         }
     }
 
