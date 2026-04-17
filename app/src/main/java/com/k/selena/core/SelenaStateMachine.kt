@@ -30,13 +30,10 @@ class SelenaStateMachine(context: Context) {
     private fun restoreState(): SelenaState {
         val rawState = prefs.getString(KEY_STATE, SelenaState.IDLE.name)
         val persisted = SelenaState.entries.firstOrNull { it.name == rawState } ?: SelenaState.IDLE
-        return when (persisted) {
-            SelenaState.IDLE -> SelenaState.IDLE
-            SelenaState.LISTENING, SelenaState.EXECUTING -> {
-                Log.w(TAG, "Recovering from persisted active state=$persisted; resetting to IDLE")
-                SelenaState.IDLE
-            }
+        if (persisted != SelenaState.IDLE) {
+            Log.w(TAG, "Recovering from persisted active state=$persisted")
         }
+        return persisted
     }
 
     private fun persistState(state: SelenaState) {

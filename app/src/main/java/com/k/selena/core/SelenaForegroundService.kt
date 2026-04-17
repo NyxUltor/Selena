@@ -51,6 +51,9 @@ class SelenaForegroundService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         startForeground(NOTIFICATION_ID, createNotification())
         if (started.compareAndSet(false, true)) {
+            if (stateMachine.currentState != SelenaState.IDLE) {
+                stateMachine.transitionTo(SelenaState.IDLE, "Service restart recovery")
+            }
             if (hasRecordAudioPermission()) {
                 Log.i(TAG, "Starting voice pipeline")
                 pipeline.start()
