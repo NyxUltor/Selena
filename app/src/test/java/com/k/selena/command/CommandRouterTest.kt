@@ -20,6 +20,19 @@ class CommandRouterTest {
         assertEquals(null, shell.lastCommand)
     }
 
+    @Test
+    fun `routes non elevated shell commands to regular shell executor`() {
+        val actions = FakeActions()
+        val shell = FakeShell()
+        val root = FakeRoot()
+        val router = CommandRouter(systemActions = actions, shellExecutor = shell, rootExecutor = root)
+
+        router.route("run whoami")
+
+        assertEquals("whoami", shell.lastCommand)
+        assertEquals(null, root.lastCommand)
+    }
+
     private class FakeActions : SystemActions {
         override fun openApp(query: String): Boolean = true
         override fun openTermuxWithCommand(command: String?): Boolean = true

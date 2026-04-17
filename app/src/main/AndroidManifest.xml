@@ -27,8 +27,10 @@
         <service
             android:name=".core.SelenaForegroundService"
             android:enabled="true"
-            android:exported="false" />
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
 
+        <!-- Optional auto-start scaffold; OEM battery/auto-start restrictions may still block this receiver. -->
         <receiver
             android:name=".system.BootCompletedReceiver"
             android:enabled="true"
