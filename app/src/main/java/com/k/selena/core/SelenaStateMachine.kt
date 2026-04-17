@@ -29,6 +29,7 @@ class SelenaStateMachine(context: Context) {
                 Log.i(TAG, "State transition: $oldState -> $newState (reason=$reason)")
                 return
             }
+            Thread.yield()
         }
     }
 

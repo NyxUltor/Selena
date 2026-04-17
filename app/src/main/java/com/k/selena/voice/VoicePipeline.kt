@@ -80,10 +80,6 @@ class VoicePipeline(
     }
 
     private fun getOrCreateToneGenerator(): ToneGenerator {
-        val existing = toneGenerator
-        if (existing != null) {
-            return existing
-        }
         return synchronized(this) {
             toneGenerator ?: ToneGenerator(AudioManager.STREAM_NOTIFICATION, 80).also {
                 toneGenerator = it
