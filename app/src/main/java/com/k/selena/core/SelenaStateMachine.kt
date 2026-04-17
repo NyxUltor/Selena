@@ -2,14 +2,15 @@ package com.k.selena.core
 
 import android.content.Context
 import android.util.Log
+import java.util.concurrent.atomic.AtomicReference
 
 class SelenaStateMachine(context: Context) {
     private val appContext = context.applicationContext
     private val prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
-    @Volatile
-    var currentState: SelenaState = restoreState()
-        private set
+    private val currentStateRef = AtomicReference(restoreState())
+    val currentState: SelenaState
+        get() = currentStateRef.get()
 
     init {
         persistState(currentState)
@@ -17,14 +18,18 @@ class SelenaStateMachine(context: Context) {
     }
 
     fun transitionTo(newState: SelenaState, reason: String) {
-        val oldState = currentState
-        if (oldState == newState) {
-            Log.d(TAG, "State unchanged: $oldState (reason=$reason)")
-            return
+        while (true) {
+            val oldState = currentStateRef.get()
+            if (oldState == newState) {
+                Log.d(TAG, "State unchanged: $oldState (reason=$reason)")
+                return
+            }
+            if (currentStateRef.compareAndSet(oldState, newState)) {
+                persistState(newState)
+                Log.i(TAG, "State transition: $oldState -> $newState (reason=$reason)")
+                return
+            }
         }
-        currentState = newState
-        persistState(newState)
-        Log.i(TAG, "State transition: $oldState -> $newState (reason=$reason)")
     }
 
     private fun restoreState(): SelenaState {

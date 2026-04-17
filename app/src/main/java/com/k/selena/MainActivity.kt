@@ -25,14 +25,14 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        Log.i(TAG, "MainActivity launched, starting Selena service and moving to background")
-        startSelenaService()
+        Log.i(TAG, "MainActivity launched, checking RECORD_AUDIO permission")
         when {
             ContextCompat.checkSelfPermission(
                 this,
                 Manifest.permission.RECORD_AUDIO
             ) == PackageManager.PERMISSION_GRANTED -> {
                 Log.i(TAG, "RECORD_AUDIO already granted")
+                startSelenaService()
                 moveTaskToBack(true)
                 finish()
             }
