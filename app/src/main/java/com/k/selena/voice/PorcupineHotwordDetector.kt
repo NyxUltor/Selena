@@ -163,8 +163,14 @@ class PorcupineHotwordDetector(
     private fun stopCapture() {
         captureRunning.set(false)
         captureThread?.interrupt()
-        captureThread?.join(JOIN_TIMEOUT_MS)
+        val thread = captureThread
         captureThread = null
+        if (thread != null) {
+            thread.join(JOIN_TIMEOUT_MS)
+            if (thread.isAlive) {
+                Log.w(TAG, "Capture thread did not terminate within ${JOIN_TIMEOUT_MS}ms; resource leak possible")
+            }
+        }
         runCatching { audioRecord?.stop() }
         audioRecord?.release()
         audioRecord = null

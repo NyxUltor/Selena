@@ -17,8 +17,11 @@ class MagiskRootExecutor : RootCommandExecutor {
                 .redirectErrorStream(true)
                 .start()
             // Drain stdout/stderr to prevent the child process blocking on a full pipe buffer.
-            process.inputStream.bufferedReader().readText()
+            val output = process.inputStream.bufferedReader().readText()
             val exitCode = process.waitFor()
+            if (output.isNotBlank()) {
+                Log.d(TAG, "Root command output: $output")
+            }
             Log.i(TAG, "Root command executed with exitCode=$exitCode")
             exitCode
         } catch (e: Exception) {

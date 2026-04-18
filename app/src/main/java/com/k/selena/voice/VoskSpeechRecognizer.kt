@@ -6,9 +6,9 @@ import android.media.AudioRecord
 import android.media.MediaRecorder
 import android.util.Log
 import org.json.JSONObject
+import org.vosk.KaldiRecognizer
 import org.vosk.Model
-import org.vosk.Recognizer
-import org.vosk.android.StorageService
+import java.io.File
 import java.io.IOException
 
 /**
@@ -17,20 +17,21 @@ import java.io.IOException
  * ## Setup
  * 1. Download a small model from https://alphacephei.com/vosk/models
  *    (recommended: `vosk-model-small-en-us-0.22`, ~40 MB).
- * 2. Unzip the model and copy the **directory** into
+ * 2. Unzip and copy the **directory** into
  *    `app/src/main/assets/<VOSK_MODEL_NAME>/`
  *    where `VOSK_MODEL_NAME` matches the `buildConfigField` in `build.gradle.kts`.
- * 3. Build and run — the model is synced from assets to internal storage on first use.
+ * 3. Build and run — the model is synced from assets to internal storage on first install; on
+ *    subsequent launches the cached copy is reused.
  *
  * ## Behaviour
- * - On construction, [StorageService.sync] copies the model from assets to `filesDir` (no-op
- *   on subsequent runs if the directory already exists).  This is synchronous and fast after the
- *   first install.
- * - [recognizeForWindow] opens an [AudioRecord], streams raw 16-kHz PCM to a [Recognizer] for
- *   the requested window, then calls [Recognizer.finalResult] to get the best transcript.
- * - Returns `null` when the model is not available or recognition yields an empty string.
- * - [close] releases the underlying [Model]. A [Recognizer] is created and closed per
- *   recognition window so that resources are not held between calls.
+ * - Constructor copies the model directory from assets to `filesDir` on first run (skipped when
+ *   the destination already exists). If the model is absent from assets, a warning is logged and
+ *   every [recognizeForWindow] call returns `null`.
+ * - [recognizeForWindow] opens an [AudioRecord], streams raw 16-kHz PCM to a [KaldiRecognizer]
+ *   for the requested window duration, then calls [KaldiRecognizer.finalResult] to obtain the
+ *   best transcript.
+ * - [close] releases the [Model]. A fresh [KaldiRecognizer] is created and destroyed per
+ *   recognition window to keep memory pressure low.
  */
 class VoskSpeechRecognizer(
     private val context: Context,
@@ -40,7 +41,22 @@ class VoskSpeechRecognizer(
     private var model: Model? = null
 
     init {
-        loadModel()
+        try {
+            val modelDir = syncModelFromAssets()
+            if (modelDir != null) {
+                model = Model(modelDir.absolutePath)
+                Log.i(TAG, "Vosk model loaded from ${modelDir.absolutePath}")
+            } else {
+                Log.w(
+                    TAG,
+                    "Vosk model '$modelName' not found in assets — place the model directory " +
+                        "at app/src/main/assets/$modelName/. " +
+                        "Download models from https://alphacephei.com/vosk/models"
+                )
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to load Vosk model", e)
+        }
     }
 
     // -----------------------------------------------------------------------------------------
@@ -77,7 +93,7 @@ class VoskSpeechRecognizer(
             return null
         }
 
-        val recognizer = Recognizer(m, SAMPLE_RATE.toFloat())
+        val recognizer = KaldiRecognizer(m, SAMPLE_RATE.toFloat())
         var recordingStarted = false
         return try {
             recorder.startRecording()
@@ -121,30 +137,38 @@ class VoskSpeechRecognizer(
     // Internal
     // -----------------------------------------------------------------------------------------
 
-    private fun loadModel() {
-        try {
-            StorageService.sync(context, modelName, object : StorageService.Callback {
-                override fun onSuccess(filesDir: String) {
-                    try {
-                        model = Model(filesDir)
-                        Log.i(TAG, "Vosk model loaded from $filesDir")
-                    } catch (e: IOException) {
-                        Log.e(TAG, "Failed to load Vosk model from $filesDir", e)
-                    }
-                }
+    /**
+     * Copies the model directory from assets to [Context.getFilesDir] on first run.
+     * Returns the destination [File], or `null` if the model is absent from assets.
+     */
+    private fun syncModelFromAssets(): File? {
+        val destDir = File(context.filesDir, modelName)
+        if (destDir.exists() && destDir.isDirectory) {
+            return destDir
+        }
+        val assetList = try {
+            context.assets.list(modelName) ?: return null
+        } catch (e: IOException) {
+            return null
+        }
+        if (assetList.isEmpty()) return null
+        copyAssetDir(modelName, destDir)
+        return destDir
+    }
 
-                override fun onFailure(e: IOException) {
-                    Log.e(
-                        TAG,
-                        "Vosk model sync failed — ensure the model directory " +
-                            "'$modelName' is present in app/src/main/assets/. " +
-                            "Download models from https://alphacephei.com/vosk/models",
-                        e
-                    )
+    private fun copyAssetDir(assetPath: String, destDir: File) {
+        destDir.mkdirs()
+        val children = context.assets.list(assetPath) ?: return
+        for (child in children) {
+            val childAssetPath = "$assetPath/$child"
+            val childDest = File(destDir, child)
+            if (context.assets.list(childAssetPath)?.isNotEmpty() == true) {
+                copyAssetDir(childAssetPath, childDest)
+            } else {
+                context.assets.open(childAssetPath).use { input ->
+                    childDest.outputStream().use { output -> input.copyTo(output) }
                 }
-            })
-        } catch (e: Exception) {
-            Log.e(TAG, "Unexpected error starting Vosk model sync", e)
+            }
         }
     }
 
@@ -154,8 +178,7 @@ class VoskSpeechRecognizer(
      */
     private fun parseText(json: String): String? {
         return try {
-            val text = JSONObject(json).optString("text", "").trim()
-            text.ifBlank { null }
+            JSONObject(json).optString("text", "").trim().ifBlank { null }
         } catch (e: Exception) {
             Log.w(TAG, "Could not parse Vosk result JSON: $json")
             null

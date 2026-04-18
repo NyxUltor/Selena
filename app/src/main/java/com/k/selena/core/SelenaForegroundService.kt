@@ -22,7 +22,6 @@ import com.k.selena.system.AndroidSystemActions
 import com.k.selena.system.MagiskRootExecutor
 import com.k.selena.system.RuntimeShellExecutor
 import com.k.selena.voice.MockHotwordDetector
-import com.k.selena.voice.MockSpeechRecognizer
 import com.k.selena.voice.PorcupineHotwordDetector
 import com.k.selena.voice.VoicePipeline
 import com.k.selena.voice.VoskSpeechRecognizer
@@ -60,12 +59,7 @@ class SelenaForegroundService : Service() {
         val speechRecognizer = VoskSpeechRecognizer(
             context = this,
             modelName = BuildConfig.VOSK_MODEL_NAME
-        ).let { vosk ->
-            // If the Vosk model is not yet in assets the recognizer will log a clear error and
-            // return null for every window. Fall back to MockSpeechRecognizer only when Vosk
-            // itself failed to construct (should be very rare — model-missing is handled inside).
-            vosk
-        }
+        )
 
         pipeline = VoicePipeline(
             hotwordDetector = hotwordDetector,
