@@ -18,7 +18,8 @@ class VoicePipeline(
 ) {
     private val running = AtomicBoolean(false)
     private val executor = Executors.newSingleThreadExecutor()
-    private val toneGenerator = ToneGenerator(AudioManager.STREAM_NOTIFICATION, 80)
+    private val toneGeneratorLock = Any()
+    private var toneGenerator: ToneGenerator? = null
     private var worker: Future<*>? = null
 
     fun start() {
@@ -52,7 +53,7 @@ class VoicePipeline(
         running.set(false)
         worker?.cancel(true)
         executor.shutdownNow()
-        toneGenerator.release()
+        releaseToneGenerator()
         stateMachine.transitionTo(SelenaState.IDLE, "Voice pipeline stopped")
         Log.i(TAG, "Voice loop stopped")
     }
@@ -75,7 +76,22 @@ class VoicePipeline(
 
     private fun playBeep(start: Boolean) {
         val tone = if (start) ToneGenerator.TONE_PROP_BEEP else ToneGenerator.TONE_PROP_ACK
-        toneGenerator.startTone(tone, BEEP_DURATION_MS.toInt())
+        getOrCreateToneGenerator().startTone(tone, BEEP_DURATION_MS.toInt())
+    }
+
+    private fun getOrCreateToneGenerator(): ToneGenerator {
+        return synchronized(toneGeneratorLock) {
+            toneGenerator ?: ToneGenerator(AudioManager.STREAM_NOTIFICATION, 80).also {
+                toneGenerator = it
+            }
+        }
+    }
+
+    private fun releaseToneGenerator() {
+        synchronized(toneGeneratorLock) {
+            toneGenerator?.release()
+            toneGenerator = null
+        }
     }
 
     companion object {
