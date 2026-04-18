@@ -8,6 +8,7 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
@@ -20,9 +21,11 @@ import com.k.selena.command.CommandRouter
 import com.k.selena.system.AndroidSystemActions
 import com.k.selena.system.MagiskRootExecutor
 import com.k.selena.system.RuntimeShellExecutor
-import com.k.selena.voice.AudioRecordSpeechRecognizer
 import com.k.selena.voice.MockHotwordDetector
+import com.k.selena.voice.MockSpeechRecognizer
+import com.k.selena.voice.PorcupineHotwordDetector
 import com.k.selena.voice.VoicePipeline
+import com.k.selena.voice.VoskSpeechRecognizer
 import java.util.concurrent.atomic.AtomicBoolean
 
 class SelenaForegroundService : Service() {
@@ -41,9 +44,32 @@ class SelenaForegroundService : Service() {
             shellExecutor = RuntimeShellExecutor(),
             rootExecutor = rootExecutor
         )
+
+        val hotwordDetector = if (BuildConfig.PICOVOICE_ACCESS_KEY.isNotBlank()) {
+            Log.i(TAG, "Using PorcupineHotwordDetector")
+            PorcupineHotwordDetector(
+                context = this,
+                accessKey = BuildConfig.PICOVOICE_ACCESS_KEY,
+                sensitivity = BuildConfig.HOTWORD_SENSITIVITY
+            )
+        } else {
+            Log.w(TAG, "PICOVOICE_ACCESS_KEY not set — falling back to MockHotwordDetector")
+            MockHotwordDetector(BuildConfig.HOTWORD)
+        }
+
+        val speechRecognizer = VoskSpeechRecognizer(
+            context = this,
+            modelName = BuildConfig.VOSK_MODEL_NAME
+        ).let { vosk ->
+            // If the Vosk model is not yet in assets the recognizer will log a clear error and
+            // return null for every window. Fall back to MockSpeechRecognizer only when Vosk
+            // itself failed to construct (should be very rare — model-missing is handled inside).
+            vosk
+        }
+
         pipeline = VoicePipeline(
-            hotwordDetector = MockHotwordDetector(BuildConfig.HOTWORD),
-            speechRecognizer = AudioRecordSpeechRecognizer(),
+            hotwordDetector = hotwordDetector,
+            speechRecognizer = speechRecognizer,
             stateMachine = stateMachine,
             commandRouter = commandRouter
         )
@@ -74,11 +100,10 @@ class SelenaForegroundService : Service() {
                 Log.w(TAG, "RECORD_AUDIO not granted; service remains active in IDLE mode")
                 stateMachine.transitionTo(SelenaState.IDLE, "Microphone permission unavailable")
             }
+            requestBatteryOptimizationExemption()
         } else {
             Log.d(TAG, "Voice pipeline already running")
         }
-        // TODO: Ask user to disable battery optimizations for higher survivability on OEM ROMs.
-        //       Intent("android.settings.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS") with package URI.
         return START_STICKY
     }
 
@@ -98,6 +123,28 @@ class SelenaForegroundService : Service() {
             this,
             Manifest.permission.RECORD_AUDIO
         ) == PackageManager.PERMISSION_GRANTED
+
+    /**
+     * Request that the OS exempts Selena from battery optimisations. On stock Android this shows
+     * a system dialog; on OEM ROMs the user may still need to allow auto-start manually.
+     * The permission [android.Manifest.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS] is
+     * declared in the manifest, so the intent is safe to fire without a try/catch.
+     */
+    private fun requestBatteryOptimizationExemption() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
+        val pm = getSystemService(PowerManager::class.java)
+        if (pm.isIgnoringBatteryOptimizations(packageName)) return
+        try {
+            val intent = Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                data = Uri.parse("package:$packageName")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            startActivity(intent)
+            Log.i(TAG, "Launched battery optimisation exemption dialog")
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not launch battery optimisation dialog", e)
+        }
+    }
 
     private fun createNotification(): Notification {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

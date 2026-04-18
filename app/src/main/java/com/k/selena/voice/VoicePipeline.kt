@@ -28,7 +28,7 @@ class VoicePipeline(
             return
         }
         worker = executor.submit {
-            Log.i(TAG, "Voice loop started (offline-first mock mode)")
+            Log.i(TAG, "Voice loop started")
             while (running.get()) {
                 try {
                     Thread.sleep(POLL_INTERVAL_MS)
@@ -54,24 +54,34 @@ class VoicePipeline(
         worker?.cancel(true)
         executor.shutdownNow()
         releaseToneGenerator()
+        hotwordDetector.close()
+        speechRecognizer.close()
         stateMachine.transitionTo(SelenaState.IDLE, "Voice pipeline stopped")
         Log.i(TAG, "Voice loop stopped")
     }
 
     private fun onHotwordDetected() {
-        playBeep(start = true)
-        stateMachine.transitionTo(SelenaState.LISTENING, "Hotword detected")
-        Log.i(TAG, "Opening listening window for ${LISTEN_WINDOW_MS}ms")
-        val recognized = speechRecognizer.recognizeForWindow(LISTEN_WINDOW_MS)
-        stateMachine.transitionTo(SelenaState.EXECUTING, "Recognition complete")
-        if (!recognized.isNullOrBlank()) {
-            Log.i(TAG, "Recognized text=$recognized")
-            commandRouter.route(recognized)
-        } else {
-            Log.i(TAG, "Silence detected; closing listening window")
+        // Pause hotword audio capture before opening the ASR microphone window so that
+        // the two AudioRecord sessions do not compete for the microphone.
+        hotwordDetector.pause()
+        try {
+            playBeep(start = true)
+            stateMachine.transitionTo(SelenaState.LISTENING, "Hotword detected")
+            Log.i(TAG, "Opening listening window for ${LISTEN_WINDOW_MS}ms")
+            val recognized = speechRecognizer.recognizeForWindow(LISTEN_WINDOW_MS)
+            stateMachine.transitionTo(SelenaState.EXECUTING, "Recognition complete")
+            if (!recognized.isNullOrBlank()) {
+                Log.i(TAG, "Recognized text=$recognized")
+                commandRouter.route(recognized)
+            } else {
+                Log.i(TAG, "Silence detected; closing listening window")
+            }
+            playBeep(start = false)
+            stateMachine.transitionTo(SelenaState.IDLE, "Command handling done")
+        } finally {
+            // Always resume hotword detection, even if recognition or routing threw.
+            hotwordDetector.resume()
         }
-        playBeep(start = false)
-        stateMachine.transitionTo(SelenaState.IDLE, "Command handling done")
     }
 
     private fun playBeep(start: Boolean) {
