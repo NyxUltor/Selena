@@ -3,5 +3,6 @@ package com.k.selena.core
 enum class SelenaState {
     IDLE,
     LISTENING,
-    EXECUTING
+    EXECUTING,
+    AWAITING_CONFIRMATION
 }

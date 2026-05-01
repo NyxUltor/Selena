@@ -18,11 +18,14 @@ import androidx.core.app.NotificationCompat
 import com.k.selena.BuildConfig
 import com.k.selena.R
 import com.k.selena.command.CommandRouter
+import com.k.selena.model.ModelManager
 import com.k.selena.system.AndroidSystemActions
 import com.k.selena.system.MagiskRootExecutor
 import com.k.selena.system.RuntimeShellExecutor
+import com.k.selena.voice.AudioFocusManager
 import com.k.selena.voice.MockHotwordDetector
 import com.k.selena.voice.PorcupineHotwordDetector
+import com.k.selena.voice.TtsCommandAnnouncer
 import com.k.selena.voice.VoicePipeline
 import com.k.selena.voice.VoskSpeechRecognizer
 import java.util.concurrent.atomic.AtomicBoolean
@@ -32,10 +35,25 @@ class SelenaForegroundService : Service() {
     private lateinit var stateMachine: SelenaStateMachine
     private lateinit var pipeline: VoicePipeline
     private lateinit var wakeLock: PowerManager.WakeLock
+    private var ttsAnnouncer: TtsCommandAnnouncer? = null
 
     override fun onCreate() {
         super.onCreate()
         stateMachine = SelenaStateMachine(this)
+
+        // Model management: log availability so future UI/download logic can act on it.
+        val modelManager = ModelManager(this)
+        if (!modelManager.isModelAvailable(BuildConfig.VOSK_MODEL_NAME)) {
+            Log.w(TAG, "Vosk model '${BuildConfig.VOSK_MODEL_NAME}' not found in internal storage. " +
+                    "Attempting to copy from assets…")
+            val copied = modelManager.copyFromAssets(BuildConfig.VOSK_MODEL_NAME)
+            if (!copied) {
+                Log.w(TAG, "Model could not be copied from assets. ASR will be unavailable " +
+                        "until the model is installed at: " +
+                        "${modelManager.modelDir(BuildConfig.VOSK_MODEL_NAME).absolutePath}")
+            }
+        }
+
         val systemActions = AndroidSystemActions(this)
         val rootExecutor = MagiskRootExecutor()
         val commandRouter = CommandRouter(
@@ -43,6 +61,9 @@ class SelenaForegroundService : Service() {
             shellExecutor = RuntimeShellExecutor(),
             rootExecutor = rootExecutor
         )
+
+        // TTS announcer for root-command confirmation read-back.
+        val announcer = TtsCommandAnnouncer(this).also { ttsAnnouncer = it }
 
         val hotwordDetector = if (BuildConfig.PICOVOICE_ACCESS_KEY.isNotBlank()) {
             Log.i(TAG, "Using PorcupineHotwordDetector")
@@ -65,7 +86,9 @@ class SelenaForegroundService : Service() {
             hotwordDetector = hotwordDetector,
             speechRecognizer = speechRecognizer,
             stateMachine = stateMachine,
-            commandRouter = commandRouter
+            commandRouter = commandRouter,
+            commandAnnouncer = announcer,
+            audioFocusManager = AudioFocusManager(this)
         )
         val powerManager = getSystemService(PowerManager::class.java)
         // PARTIAL_WAKE_LOCK keeps the CPU alive while the screen is off so the voice pipeline
@@ -104,6 +127,7 @@ class SelenaForegroundService : Service() {
     override fun onDestroy() {
         Log.i(TAG, "Foreground service destroyed")
         pipeline.stop()
+        ttsAnnouncer?.shutdown()
         if (wakeLock.isHeld) {
             wakeLock.release()
         }
