@@ -36,4 +36,19 @@ class SelenaStateMachineTest {
         machine.transitionTo(SelenaState.IDLE, "redundant")
         assertEquals(SelenaState.IDLE, machine.currentState)
     }
+
+    @Test
+    fun `transitions to AWAITING_CONFIRMATION for elevated commands`() {
+        machine.transitionTo(SelenaState.LISTENING, "hotword")
+        machine.transitionTo(SelenaState.EXECUTING, "speech captured")
+        machine.transitionTo(SelenaState.AWAITING_CONFIRMATION, "elevated command staged")
+        assertEquals(SelenaState.AWAITING_CONFIRMATION, machine.currentState)
+    }
+
+    @Test
+    fun `transitions from AWAITING_CONFIRMATION back to IDLE after cancellation`() {
+        machine.transitionTo(SelenaState.AWAITING_CONFIRMATION, "elevated command staged")
+        machine.transitionTo(SelenaState.IDLE, "confirmation cancelled")
+        assertEquals(SelenaState.IDLE, machine.currentState)
+    }
 }
